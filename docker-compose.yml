@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: g1-vllm
+    command:
+      - "--model"
+      - "${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
+      - "--gpu-memory-utilization"
+      - "0.85"
+      - "--max-model-len"
+      - "4096"
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: g1-gateway
+    environment:
+      VLLM_BASE_URL: "http://vllm:8000/v1"
+      VLLM_MODEL: "${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
+      GATEWAY_HOST: "0.0.0.0"
+      GATEWAY_PORT: "8080"
+      TOOL_TIMEOUT_SECONDS: "3"
+    ports:
+      - "8080:8080"
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+volumes:
+  huggingface-cache:
